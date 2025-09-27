@@ -1,6 +1,6 @@
 import torch
 from torch.utils.data import DataLoader
-from dataset import InfiniteDataReader
+from .dataset import InfiniteDataReader
 
 def worker_init_fn(worker_id: int):
     base_seed = torch.initial_seed() % (2**32)
@@ -17,4 +17,3 @@ def create_dataloader(batch_size: int, metas_path: str, num_actions: int, traini
         worker_init_fn=worker_init_fn,
         persistent_workers=True,
     )
-

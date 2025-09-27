@@ -9,12 +9,9 @@ import torch.backends.cudnn as cudnn
 from pathlib import Path
 import subprocess
 from accelerate import Accelerator
-from dataset import create_dataloader
-import model
-from timm import create_model
-from safetensors.torch import load_file
+from datasets import create_dataloader
+from xvla import xvla
 from accelerate.utils import DistributedDataParallelKwargs
-import torch.nn.functional as F
 
 def submit_eval_job(eval_task, model, ckpt_path, output_dir):
     job_script = f"""#!/bin/bash
@@ -51,8 +48,7 @@ def get_args_parser():
     parser.add_argument('--train_metas_path', type=str)
     parser.add_argument('--precision', default='fp16', type=str)
     
-    
-    parser.add_argument('--model', default='HFP_base', type=str)
+
     parser.add_argument('--learning_coef', default=1., type=float)
     parser.add_argument('--weight_decay', default=0., type=float)
     parser.add_argument('--seed', default=0, type=int)
@@ -83,8 +79,9 @@ def main(args):
                               project_dir=output_dir, kwargs_handlers=[kwargs])
     accelerator.init_trackers("HFP_Training")
     torch.distributed.barrier()
-    model, text_processor, _ = create_model(args.model, pretrained = args.pretrained)
-        
+    model = xvla(pretrained = args.pretrained)
+    text_processor = model.text_preprocessor
+    
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad) / 1000 / 1000
     accelerator.print(f'number of params: {n_parameters} M')
     train_dataloader = iter(create_dataloader(
