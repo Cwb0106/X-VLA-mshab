@@ -76,9 +76,7 @@ TASK_INFOS = {
                     ],
         'waist_init': [
                     0.5235990830818403,
-                    #0.7,
-                    0.3
-                   # 0.3
+                    0.22
                     ],
         'head_init': [
                     -2.6631610446506076e-06,
@@ -231,8 +229,7 @@ class ClientModel():
         print(self.domain_id, instruction)
         if not self.action_plan:
             print(obs['cam_head'].shape)
-            if self.proprio is None: self.proprio = to_flat_array(proprio)
-            if self.close_loop: self.proprio = to_flat_array(proprio) 
+            if self.proprio is None: self.proprio = to_flat_array(proprio) 
             query = {
                 "proprio": json_numpy.dumps(self.proprio),
                 "language_instruction": instruction,
@@ -243,53 +240,43 @@ class ClientModel():
             }
             response = requests.post(self.url, json=query)
             actions = np.array(response.json()['action'])[:self.chunk_size]
-            actions = self.post_process(actions)
             self.action_plan.extend(actions.tolist())
+            self.proprio = to_flat_array(proprio) if self.close_loop else actions[-1]
         
         action_predict = np.array(self.action_plan.popleft())
-        if not self.close_loop: 
-            if 'ee' in self.control_mode:
-                self.proprio = np.concatenate([
-                    action_predict[:3],
-                    quat_to_rotate6d(action_predict[3:7]),
-                    action_predict[7:8],
-                    action_predict[8:11],
-                    quat_to_rotate6d(action_predict[11:15]),
-                    action_predict[15:16]], axis=-1)
-            else: self.proprio = action_predict
-        # action_predict = self.post_process(action_predict)
+        action_predict = self.post_process(action_predict)
         return action_predict
     
     def post_process(self, action):
         # proprio: the env proprioception
         # action: the model vanilla output 
+        action = to_flat_array(action)
         
         if self.control_mode == "abs_joint":
             return action
         elif self.control_mode == "delta_joint":
-            left_joint = action[:, 0:7] + self.proprio[None, 0:7]
-            right_joint = action[:, 7:14] + self.proprio[None, 7:14]
-            left_gripper = action[:, 14:15]
-            right_gripper = action[:, 15:16]
-            return np.concatenate([left_joint, right_joint, left_gripper, right_gripper], axis=-1)
+            left_joint = action[0:7] + self.proprio[0:7]
+            right_joint = action[7:14] + self.proprio[7:14]
+            left_gripper = action[14:15]
+            right_gripper = action[15:16]
+            return np.concatenate([left_joint, right_joint, left_gripper, right_gripper])
+        
         elif self.control_mode == "abs_eef":
-            right_xyz = action[:, 0:3]
-            right_quat = rotate6d_to_quat(action[:, 3:9])
-            right_gripper = action[:, 9:10]
-            left_xyz = action[:, 10:13]
-            left_quat = rotate6d_to_quat(action[:, 13:19])
-            left_gripper = action[:, 19:20]
-            return np.concatenate([left_xyz, left_quat, left_gripper, right_xyz, right_quat, right_gripper], axis=-1)
+            right_xyz = action[0:3]
+            right_quat = rotate6d_to_quat(action[3:9])
+            right_gripper = action[9:10]
+            left_xyz = action[10:13]
+            left_quat = rotate6d_to_quat(action[13:19])
+            left_gripper = action[19:20]
+            return np.concatenate([right_xyz, right_quat, right_gripper, left_xyz, left_quat, left_gripper])
         elif self.control_mode == "delta_eef":
-            left_xyz = action[:, 0:3] + self.proprio[None, 0:3]
-            left_quat = rotate6d_to_quat(action[:, 3:9], scalar_first=True)
-            left_gripper = action[:, 9:10]
-            
-            right_xyz = action[:, 10:13] + self.proprio[None, 10:13]
-            right_quat = rotate6d_to_quat(action[:, 13:19], scalar_first=True)
-            right_gripper = action[:, 19:20]
-
-            return np.concatenate([left_xyz, left_quat, left_gripper, right_xyz, right_quat, right_gripper], axis=-1)
+            right_xyz = action[0:3] + self.proprio[0:3]
+            right_quat = rotate6d_to_quat(action[3:9])
+            right_gripper = action[9:10]
+            left_xyz = action[10:13] + self.proprio[10:13]
+            left_quat = rotate6d_to_quat(action[13:19])
+            left_gripper = action[19:20]
+            return np.concatenate([right_xyz, right_quat, right_gripper, left_xyz, left_quat, left_gripper])
             
             
 def encode_image(img: np.ndarray) -> str:
@@ -319,8 +306,8 @@ def get_and_encode_image(camera: CosineCamera, cam_sdk_name: str) -> Tuple[np.nd
     try:
         img, _ = camera.get_latest_image(cam_sdk_name)
         if img is not None and img.size > 0:
-            # encoded_str = encode_image(img)
-            return img, None
+            encoded_str = encode_image(img)
+            return img, encoded_str
         else:
             print(f"警告：无法获取 {cam_sdk_name} 的图像，或者图像为空。")
             return None, None
@@ -363,7 +350,6 @@ def main(args):
         current_instruction = TASK_INFOS[args.task_id]['instruction']
         print(f"📝 Current task_id: {args.task_id}, instruction: {current_instruction}")
         print("✅ 系统初始化完成！")
-        # input()
         print("🚀 进入主控制循环...")
 
         # --- 2. 主控制循环 ---
@@ -423,19 +409,19 @@ def main(args):
             encoded_images = {}
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             for server_name, sdk_name in CAMERA_MAPPING.items():
-                raw_img, _ = get_and_encode_image(camera, sdk_name)
+                raw_img, encoded_img = get_and_encode_image(camera, sdk_name)
                 raw_img = cv2.cvtColor(raw_img, cv2.COLOR_BGR2RGB) if raw_img is not None else None
                 encoded_images[server_name] = raw_img # we use raw image
                 if raw_img is not None:
                     print(f"✅ 已获取并编码图像: {server_name}")
                 else:
                     print(f"⚠️ 无法获取图像: {server_name}")
-                # if raw_img is not None:
-                #     log_path = os.path.join(LOG_IMAGE_DIR, f"{server_name}_{timestamp}.png")
-                #     cv2.imwrite(log_path, raw_img)
-                #     latest_path = f"./{server_name}_latest.png"
-                #     cv2.imwrite(latest_path, raw_img)
-                #     print(f"[Saved] {latest_path}")
+                if raw_img is not None:
+                    log_path = os.path.join(LOG_IMAGE_DIR, f"{server_name}_{timestamp}.png")
+                    cv2.imwrite(log_path, raw_img)
+                    latest_path = f"./{server_name}_latest.png"
+                    cv2.imwrite(latest_path, raw_img)
+                    print(f"[Saved] {latest_path}")
             
             # --- 2.4. 解析并执行动作 ---
             if "eef" in args.control_mode:
@@ -445,16 +431,8 @@ def main(args):
                     print(f"[!] 动作维度不正确 (应为16)，跳过此动作: {action}")
                     continue
 
-                left_pose_array, right_pose_array = action[0:8], action[8:16]
+                right_pose_array, left_pose_array = action[0:8], action[8:16]
                 gripper_states = [left_pose_array[7].item(), right_pose_array[7].item()]
-                left_pose_dict = { "x": left_pose_array[0].item(), 
-                                  "y": left_pose_array[1].item(),
-                                  "z": left_pose_array[2].item(),
-                                  "qx": left_pose_array[3].item(),
-                                  "qy": left_pose_array[4].item(),
-                                  "qz": left_pose_array[5].item(),
-                                  "qw": left_pose_array[6].item() }
-                
                 right_pose_dict = { "x": right_pose_array[0].item(), 
                                    "y": right_pose_array[1].item(), 
                                    "z": right_pose_array[2].item(), 
@@ -462,14 +440,20 @@ def main(args):
                                    "qy": right_pose_array[4].item(), 
                                    "qz": right_pose_array[5].item(), 
                                    "qw": right_pose_array[6].item()}
-                
+                left_pose_dict = { "x": left_pose_array[0].item(), 
+                                  "y": left_pose_array[1].item(),
+                                  "z": left_pose_array[2].item(),
+                                  "qx": left_pose_array[3].item(),
+                                  "qy": left_pose_array[4].item(),
+                                  "qz": left_pose_array[5].item(),
+                                  "qw": left_pose_array[6].item() }
+            
                 robot_controller.set_end_effector_pose_control(
                     lifetime=1.0,
                     control_group=["dual_arm"],
                     right_pose=right_pose_dict,
                     left_pose=left_pose_dict,
                 )
-                gripper_states = [35 if x < 0.5 else 120 for x in gripper_states] # to angle
                 robot_dds.move_gripper(gripper_states)
             elif "joint" in args.control_mode:
                 action = agent.step(encoded_images, joint_pose_state, current_instruction)
@@ -488,7 +472,7 @@ def main(args):
                         "right_arm": right_joints.tolist()
                     }
                 )
-                gripper_states = [35 if x < 0.1 else 120 for x in gripper_states] # to angle
+                gripper_states = [35 if x < 0.2 else 120 for x in gripper_states] # to angle
                 robot_dds.move_gripper(gripper_states)
             else:
                 print(f"Unsupported control mode: {args.control_mode}")
