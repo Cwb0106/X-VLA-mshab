@@ -49,6 +49,8 @@ This design avoids package conflicts and supports distributed inference across G
 
 #### 🧠 Available Pre-trained Models
 
+- [ ] We observed a slight performance drop (around 1% across different datasets) after converting our models to the HF format, and we’re actively investigating the cause.
+
 | Model ID                                                                                           | Embodiment        | Description                                                                                     |   Performance   | Evaluation Guidance |
 | :------------------------------------------------------------------------------------------------- | :---------------- | :---------------------------------------------------------------------------------------------- | :--------------: | :-----------------: |
 | [`2toINF/X-VLA-Pt`](https://huggingface.co/2toINF/X-VLA-Pt)                                        | Foundation        | Pretrained on large-scale heterogeneous robot–vision–language datasets for general transfer.     | —                | —                   |
