@@ -53,7 +53,7 @@ This design avoids package conflicts and supports distributed inference across G
 
 #### 🧠 About Libero Setup and Evluation
 
-- [ ] For questions about converting relative actions to absolute actions and our implementation, please first refer to issue [#2](https://github.com/2toinf/X-VLA/issues/2). We will update these details in the repository soon.
+- [x] For questions about converting relative actions to absolute actions and our implementation, please first refer to issue [#2](https://github.com/2toinf/X-VLA/issues/2) and [#15](https://github.com/2toinf/X-VLA/issues/15). We have updated our [implementation](https://github.com/2toinf/X-VLA/blob/main/evaluation/libero/rel2abs.py) for retrieving absolute EEF actions.
 
 | Model ID                                                                                           | Embodiment        | Description                                                                                     |   Performance   | Evaluation Guidance |
 | :------------------------------------------------------------------------------------------------- | :---------------- | :---------------------------------------------------------------------------------------------- | :--------------: | :-----------------: |
