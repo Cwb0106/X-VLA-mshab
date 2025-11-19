@@ -401,3 +401,11 @@ class SoftPromptedTransformer(nn.Module):
 
         # Decode only the action segment
         return self.action_decoder(self.norm(x[:, :num_actions]), domain_id)
+
+
+
+
+
+
+
+        
